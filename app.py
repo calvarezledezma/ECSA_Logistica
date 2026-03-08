@@ -44,139 +44,128 @@ def crear_html_hexagono(nombre, total, mejor, peor, promedio, cumplimiento):
     </div>
     """
 
-# --- CABECERA TRIPLE CON LOGOS FÍSICOS ---
+# --- CABECERA CON LOGOS ---
 col_ecsa, col_titulo, col_sbi = st.columns([1, 2, 1])
-
 with col_ecsa:
-    if os.path.exists("ecsa.png"):
-        st.image("ecsa.png", width=180)
-    else:
-        st.write("🥤 **Envases Central**")
-
+    if os.path.exists("ecsa.png"): st.image("ecsa.png", width=180)
 with col_titulo:
     st.markdown("<h1 style='text-align: center; margin-top: 20px;'>Dashboard Operaciones Despacho</h1>", unsafe_allow_html=True)
-
 with col_sbi:
     if os.path.exists("SBI.jpg"):
-        # Alineación a la derecha
         st.markdown("<div style='display: flex; justify-content: flex-end;'>", unsafe_allow_html=True)
-        st.image("SBI.jpg", width=200)
+        st.image("SBI.jpg", width=180)
         st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.markdown("<h3 style='text-align: right; color: #003366; margin-top: 25px;'>SBI Latam</h3>", unsafe_allow_html=True)
 
 st.divider()
 
-# --- CARGA DE DATOS ---
-uploaded_file = st.file_uploader("Cargar Archivo Excel de la Semana", type=["xlsx"])
+# --- LÓGICA DE CARGA DE DATOS (AUTOMÁTICA O MANUAL) ---
+FILE_NAME = "Trazabilidad Logística.xlsx"
+uploaded_file = st.file_uploader("Cargar Archivo Excel manualmente (Opcional)", type=["xlsx"])
 
 if uploaded_file:
     xls = pd.ExcelFile(uploaded_file)
     nombre_pestana = xls.sheet_names[0]
     df = pd.read_excel(xls, sheet_name=nombre_pestana)
-    df.columns = df.columns.str.strip()
+else:
+    # Si no hay carga manual, intenta leer el archivo por defecto
+    if os.path.exists(FILE_NAME):
+        xls = pd.ExcelFile(FILE_NAME)
+        nombre_pestana = xls.sheet_names[0]
+        df = pd.read_excel(xls, sheet_name=nombre_pestana)
+        st.info(f"📊 Mostrando reporte oficial: {nombre_pestana}")
+    else:
+        st.warning(f"⚠️ El sistema no encuentra el archivo '{FILE_NAME}'. Por favor, cárgalo manualmente.")
+        st.stop()
 
-    COL_L = 'Tiempo Atención'
-    COL_Q = 'Supervisor Despacho'
-    COL_FECHA = 'Fecha'
+# --- PROCESAMIENTO ---
+df.columns = df.columns.str.strip()
+COL_L, COL_Q, COL_FECHA = 'Tiempo Atención', 'Supervisor Despacho', 'Fecha'
 
-    if COL_L in df.columns and COL_Q in df.columns:
-        df['minutos_L'] = df[COL_L].apply(convertir_a_minutos)
-        if COL_FECHA in df.columns:
-            df[COL_FECHA] = pd.to_datetime(df[COL_FECHA], errors='coerce')
+if COL_L in df.columns and COL_Q in df.columns:
+    df['minutos_L'] = df[COL_L].apply(convertir_a_minutos)
+    if COL_FECHA in df.columns:
+        df[COL_FECHA] = pd.to_datetime(df[COL_FECHA], errors='coerce')
 
-        # Lógica de categorización estricta de tus fórmulas
-        df['Estado'] = df['minutos_L'].apply(lambda t: 'Alerta' if t > 60 else ('Excelente' if t < 40 else 'Aceptable'))
+    df['Estado'] = df['minutos_L'].apply(lambda t: 'Alerta' if t > 60 else ('Excelente' if t < 40 else 'Aceptable'))
 
-        # --- 📊 CUADRO RESUMEN ---
-        res = df.groupby([COL_Q, 'Estado']).size().unstack(fill_value=0)
-        for c in ['Alerta', 'Aceptable', 'Excelente']:
-            if c not in res.columns: res[c] = 0
-        res = res[['Alerta', 'Aceptable', 'Excelente']]
-        res['Total'] = res.sum(axis=1)
-        res['% viajes demorados'] = (res['Alerta'] / res['Total'] * 100).apply(lambda x: int(round(x)))
-        
-        # Ordenar por volumen
-        res = res.sort_values(by='Total', ascending=False)
+    # --- 📊 CUADRO RESUMEN ---
+    res = df.groupby([COL_Q, 'Estado']).size().unstack(fill_value=0)
+    for c in ['Alerta', 'Aceptable', 'Excelente']:
+        if c not in res.columns: res[c] = 0
+    res = res[['Alerta', 'Aceptable', 'Excelente']]
+    res['Total'] = res.sum(axis=1)
+    res['% viajes demorados'] = (res['Alerta'] / res['Total'] * 100).apply(lambda x: int(round(x)))
+    res = res.sort_values(by='Total', ascending=False) # ORDENADO POR VOLUMEN
 
-        t_total = res['Total'].sum()
-        pct_gral = int(round((res['Alerta'].sum() / t_total * 100))) if t_total > 0 else 0
+    t_total = res['Total'].sum()
+    pct_gral = int(round((res['Alerta'].sum() / t_total * 100))) if t_total > 0 else 0
 
-        filas_html = "".join([f"""
-            <tr style="border: 1px solid black; font-weight: bold; font-size: 15px;">
-                <td style="text-align: left; padding: 10px; border: 1px solid black; background-color: white;">{name}</td>
-                <td style="background-color: #FFC0CB; border: 1px solid black;">{row['Alerta']}</td>
-                <td style="background-color: #FFF3CD; border: 1px solid black;">{row['Aceptable']}</td>
-                <td style="background-color: #D4EDDA; border: 1px solid black;">{row['Excelente']}</td>
-                <td style="background-color: #4472C4; color: white; border: 1px solid black;">{row['Total']}</td>
-                <td style="background-color: white; color: red; border: 1px solid black;">{row['% viajes demorados']}%</td>
-            </tr>""" for name, row in res.iterrows()])
+    filas_html = "".join([f"""
+        <tr style="border: 1px solid black; font-weight: bold; font-size: 15px;">
+            <td style="text-align: left; padding: 10px; border: 1px solid black; background-color: white;">{name}</td>
+            <td style="background-color: #FFC0CB; border: 1px solid black;">{row['Alerta']}</td>
+            <td style="background-color: #FFF3CD; border: 1px solid black;">{row['Aceptable']}</td>
+            <td style="background-color: #D4EDDA; border: 1px solid black;">{row['Excelente']}</td>
+            <td style="background-color: #4472C4; color: white; border: 1px solid black;">{row['Total']}</td>
+            <td style="background-color: white; color: red; border: 1px solid black;">{row['% viajes demorados']}%</td>
+        </tr>""" for name, row in res.iterrows()])
 
-        tabla_html = f"""
-        <div style="font-family: Arial; text-align: center;">
-            <h2 style="margin-bottom: 10px;">Cuadro Tiempo de Atención Despachadores</h2>
-            <table style="width: 100%; border-collapse: collapse; text-align: center; border: 2px solid black;">
-                <thead>
-                    <tr style="background-color: white;">
-                        <th style="border: 1px solid black; padding: 10px; width: 30%;">Supervisor Despacho</th>
-                        <th style="background-color: #FFC0CB; border: 1px solid black;">Alerta (>1h)</th>
-                        <th style="background-color: #FFF3CD; border: 1px solid black;">Aceptable (40-60m)</th>
-                        <th style="background-color: #D4EDDA; border: 1px solid black;">Excelente (<40m)</th>
-                        <th style="background-color: #4472C4; color: white; border: 1px solid black;">Total</th>
-                        <th style="background-color: red; color: white; border: 1px solid black; padding: 10px;">% viajes demorados</th>
-                    </tr>
-                </thead>
-                <tbody>{filas_html}</tbody>
-                <tfoot style="background-color: #FFFF00; font-weight: bold; font-size: 18px;">
-                    <tr><td style="text-align: right; padding: 10px; border: 1px solid black;">Total Semana</td>
-                    <td colspan="3" style="border: 1px solid black;"></td>
-                    <td style="border: 1px solid black;">{t_total}</td>
-                    <td style="border: 1px solid black;">{pct_gral}%</td></tr>
-                </tfoot>
-            </table>
-        </div>"""
-        components.html(tabla_html, height=350)
+    tabla_html = f"""
+    <div style="font-family: Arial; text-align: center;">
+        <h2 style="margin-bottom: 10px;">Cuadro Tiempo de Atención Despachadores</h2>
+        <table style="width: 100%; border-collapse: collapse; text-align: center; border: 2px solid black;">
+            <thead><tr style="background-color: white;">
+                <th style="border: 1px solid black; padding: 10px; width: 30%;">Supervisor Despacho</th>
+                <th style="background-color: #FFC0CB; border: 1px solid black;">Alerta (>1h)</th>
+                <th style="background-color: #FFF3CD; border: 1px solid black;">Aceptable (40-60m)</th>
+                <th style="background-color: #D4EDDA; border: 1px solid black;">Excelente (<40m)</th>
+                <th style="background-color: #4472C4; color: white; border: 1px solid black;">Total</th>
+                <th style="background-color: red; color: white; border: 1px solid black; padding: 10px;">% viajes demorados</th>
+            </tr></thead>
+            <tbody>{filas_html}</tbody>
+            <tfoot style="background-color: #FFFF00; font-weight: bold; font-size: 18px;">
+                <tr><td style="text-align: right; padding: 10px; border: 1px solid black;">Total Semana</td>
+                <td colspan="3" style="border: 1px solid black;"></td>
+                <td style="border: 1px solid black;">{t_total}</td>
+                <td style="border: 1px solid black;">{pct_gral}%</td></tr>
+            </tfoot>
+        </table>
+    </div>"""
+    components.html(tabla_html, height=350)
 
-        st.divider()
+    st.divider()
 
-        # --- ⬢ HEXÁGONOS ORDENADOS POR VOLUMEN ---
-        st.subheader("Performance Individual por Despachador")
-        supervisores_ordenados = res.index.tolist()
-        cols = st.columns(2)
-        for i, supervisor in enumerate(supervisores_ordenados):
-            d_s = df[df[COL_Q] == supervisor]
-            mejor, peor, promedio = format_time(d_s['minutos_L'].min()), format_time(d_s['minutos_L'].max()), format_time(d_s['minutos_L'].mean())
-            cumplimiento = int(100 - (res.loc[supervisor, '% viajes demorados']))
-            html_hex = crear_html_hexagono(supervisor, int(res.loc[supervisor, 'Total']), mejor, peor, promedio, cumplimiento)
-            with cols[i % 2]:
-                components.html(html_hex, height=330)
+    # --- ⬢ HEXÁGONOS ORDENADOS ---
+    st.subheader("Performance Individual por Despachador")
+    supervisores_ordenados = res.index.tolist()
+    cols = st.columns(2)
+    for i, supervisor in enumerate(supervisores_ordenados):
+        d_s = df[df[COL_Q] == supervisor]
+        mejor, peor, promedio = format_time(d_s['minutos_L'].min()), format_time(d_s['minutos_L'].max()), format_time(d_s['minutos_L'].mean())
+        cumplimiento = int(100 - (res.loc[supervisor, '% viajes demorados']))
+        html_hex = crear_html_hexagono(supervisor, int(res.loc[supervisor, 'Total']), mejor, peor, promedio, cumplimiento)
+        with cols[i % 2]: components.html(html_hex, height=330)
 
-        st.divider()
+    st.divider()
 
-        # --- 📈 GRÁFICO FINAL (TÍTULO A 0.33) ---
-        if COL_FECHA in df.columns:
-            df_diario = df.groupby(COL_FECHA).size().reset_index(name='Total').sort_values(COL_FECHA)
-            df_diario[COL_FECHA] = df_diario[COL_FECHA].dt.strftime('%d-%m-%Y')
-            
-            fig = px.line(df_diario, x=COL_FECHA, y='Total', title=f"Despachos diarios {nombre_pestana}", markers=True, text='Total')
-            
-            fig.update_traces(line=dict(color='#4472C4', width=4), 
-                              marker=dict(size=28, color='#4472C4', line=dict(width=2, color='white')),
-                              textposition="middle center", textfont=dict(color='white', size=12, family="Arial Black"))
-            
-            fig.update_layout(plot_bgcolor='rgba(240,240,240,0.5)', paper_bgcolor='white', 
-                              title_x=0.33, 
-                              title_font=dict(size=26, color="black", family="Arial Black"),
-                              xaxis=dict(showgrid=True, gridcolor='lightgray', title="Fecha"),
-                              yaxis=dict(showgrid=True, gridcolor='lightgray', title="", showticklabels=False), margin=dict(t=80))
-            st.plotly_chart(fig, use_container_width=True)
+    # --- 📈 GRÁFICO FINAL (TÍTULO A 0.33) ---
+    if COL_FECHA in df.columns:
+        df_diario = df.groupby(COL_FECHA).size().reset_index(name='Total').sort_values(COL_FECHA)
+        df_diario[COL_FECHA] = df_diario[COL_FECHA].dt.strftime('%d-%m-%Y')
+        fig = px.line(df_diario, x=COL_FECHA, y='Total', title=f"Despachos diarios {nombre_pestana}", markers=True, text='Total')
+        fig.update_traces(line=dict(color='#4472C4', width=4), marker=dict(size=28, color='#4472C4', line=dict(width=2, color='white')),
+                          textposition="middle center", textfont=dict(color='white', size=12, family="Arial Black"))
+        fig.update_layout(plot_bgcolor='rgba(240,240,240,0.5)', paper_bgcolor='white', title_x=0.33, 
+                          title_font=dict(size=26, color="black", family="Arial Black"),
+                          xaxis=dict(showgrid=True, gridcolor='lightgray', title="Fecha"),
+                          yaxis=dict(showgrid=True, gridcolor='lightgray', title="", showticklabels=False), margin=dict(t=80))
+        st.plotly_chart(fig, use_container_width=True)
 
-    # --- 🏢 FOOTER SBI LATAM ---
-    st.markdown("""
-        <style>
-        .footer { position: relative; left: 0; bottom: 0; width: 100%; color: #555555; text-align: center; padding: 30px 0px; 
-                  font-family: Arial; border-top: 1px solid #e6e6e6; margin-top: 50px; }
-        .footer b { color: #E30613; }
-        </style>
-        <div class="footer"><p>Herramienta desarrollada por <b>SBI Latam</b> © 2025</p></div>
-    """, unsafe_allow_html=True)
+# --- 🏢 FOOTER SBI LATAM ---
+st.markdown("""<style>
+    .footer { position: relative; width: 100%; color: #555555; text-align: center; padding: 30px 0px; 
+              font-family: Arial; border-top: 1px solid #e6e6e6; margin-top: 50px; }
+    .footer b { color: #E30613; }
+    </style>
+    <div class="footer"><p>Herramienta desarrollada por <b>SBI Latam</b> © 2025</p></div>
+""", unsafe_allow_html=True)
