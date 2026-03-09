@@ -71,7 +71,7 @@ if uploaded_file:
 else:
     # Buscar el archivo en el directorio actual (GitHub)
     archivos_excel = [f for f in os.listdir(".") if f.endswith(".xlsx")]
-    archivo_objetivo = "Trazabilidad Logística.xlsx"
+    archivo_objetivo = "Trazabilidad Logistica.xlsx"
     
     # Intentar encontrar por nombre exacto o cargar el primero que sea Excel
     archivo_a_cargar = archivo_objetivo if archivo_objetivo in archivos_excel else (archivos_excel[0] if archivos_excel else None)
